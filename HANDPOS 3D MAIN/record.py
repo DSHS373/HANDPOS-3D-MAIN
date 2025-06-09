@@ -4,7 +4,7 @@ import cv2
 import sys
 
 def initialize_camera(index, width=640, height=480):
-    cap = cv2.VideoCapture(index)
+    cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
     if not cap.isOpened():
         print(f"Error: Cannot open camera {index}")
         return None
@@ -26,7 +26,7 @@ except Exception as e:
 
 cameras = []
 
-for i in range(camera_count):
+for i in [0,2]:
     print(f"Camera {i} initializing...")
     cap = initialize_camera(i)
     if cap is None:

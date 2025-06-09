@@ -64,7 +64,7 @@ def save_frames_single_camera(camera_name):
 
     #open video stream and change resolution.
     #Note: if unsupported resolution is used, this does NOT raise an error.
-    cap = cv.VideoCapture(camera_device_id)
+    cap = cv.VideoCapture(camera_device_id, cv.CAP_DSHOW)
     cap.set(3, width)
     cap.set(4, height)
     
@@ -217,8 +217,8 @@ def save_frames_two_cams(camera0_name, camera1_name):
     number_to_save = calibration_settings['stereo_calibration_frames']
 
     #open the video streams
-    cap0 = cv.VideoCapture(calibration_settings[camera0_name])
-    cap1 = cv.VideoCapture(calibration_settings[camera1_name])
+    cap0 = cv.VideoCapture(calibration_settings[camera0_name] , cv.CAP_DSHOW)
+    cap1 = cv.VideoCapture(calibration_settings[camera1_name] , cv.CAP_DSHOW)
 
     #set camera resolutions
     width = calibration_settings['frame_width']
@@ -416,8 +416,8 @@ def check_calibration(camera0_name, camera0_data, camera1_name, camera1_data, _z
     pixel_points_camera1 = np.array(pixel_points_camera1)
 
     #open the video streams
-    cap0 = cv.VideoCapture(calibration_settings[camera0_name])
-    cap1 = cv.VideoCapture(calibration_settings[camera1_name])
+    cap0 = cv.VideoCapture(calibration_settings[camera0_name], cv.CAP_DSHOW)
+    cap1 = cv.VideoCapture(calibration_settings[camera1_name], cv.CAP_DSHOW)
 
     #set camera resolutions
     width = calibration_settings['frame_width']

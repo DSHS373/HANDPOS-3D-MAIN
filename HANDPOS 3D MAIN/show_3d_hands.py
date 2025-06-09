@@ -77,7 +77,7 @@ def visualize_3d(p3ds):
         ax.set_xlabel('x')
         ax.set_ylim3d(-50, 50)
         ax.set_ylabel('y')
-        ax.set_zlim3d(-100, 0)
+        ax.set_zlim3d(-50, 50)
         ax.set_zlabel('z')
 
         # Define the filepath using pathlib
