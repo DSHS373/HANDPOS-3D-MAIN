@@ -1,8 +1,8 @@
 import cv2
 
 # 카메라 0번과 1번 열기
-cap1 = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-cap2 = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+cap1 = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+cap2 = cv2.VideoCapture(2, cv2.CAP_DSHOW)
 
 # 카메라 열기 확인
 if not cap1.isOpened():

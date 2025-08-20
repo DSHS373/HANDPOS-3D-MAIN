@@ -17,16 +17,15 @@ def DLT(P1, P2, point1, point2):
          P2[0,:] - point2[0]*P2[2,:]
         ]
     A = np.array(A).reshape((4,4))
-    # print('A: ')
-    # print(A)
+    #print('A: ')
+    #print(A)
 
     B = A.transpose() @ A
-    # print(B)
     from scipy import linalg
     U, s, Vh = linalg.svd(B, full_matrices = False)
-    # print(Vh)
-    # print('Triangulated point: ')
-    # print(Vh[3,0:3]/Vh[3,3])
+
+    #print('Triangulated point: ')
+    #print(Vh[3,0:3]/Vh[3,3])
     return Vh[3,0:3]/Vh[3,3]
 
 def read_camera_parameters(camera_id):
@@ -83,7 +82,7 @@ def get_projection_matrix(camera_id):
     #read camera parameters
     cmtx, dist = read_camera_parameters(camera_id)
     rvec, tvec = read_rotation_translation(camera_id)
-
+    
     #calculate projection matrix
     P = cmtx @ _make_homogeneous_rep_matrix(rvec, tvec)[:3,:]
     return P

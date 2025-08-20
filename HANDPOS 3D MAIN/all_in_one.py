@@ -4,7 +4,6 @@ import numpy as np
 import socket
 import sys
 from utils import DLT, get_projection_matrix
-from read_arUco import Detecter
 # utils.py는 calib.py에서 저장한 파라미터 파일들을 읽어서 사용합니다.
 
 # UDP 소켓 설정 (예: 로컬호스트 127.0.0.1, 포트 5052)
@@ -14,21 +13,22 @@ UDP_PORT = 5052
 serverAddressPort = (UDP_IP, UDP_PORT)
 
 # 카메라 인덱스 (칼리브레이션 시 camera0는 0번, camera1은 내부적으로 인덱스 1번 사용)
-cam0 = 0           # 카메라 1
+cam0 = 1           # 카메라 1
 cam1 = 2           # 카메라 2 (calib 파일에서는 인덱스 1번으로 되어 있음)
 
 # Mediapipe 초기화
 mp_drawing = mp.solutions.drawing_utils
 mp_hands = mp.solutions.hands
 
-detector = Detecter()
-
 # 캘리브레이션 시 사용했던 해상도 (예: 640x480)
 frame_shape = [480, 640]  # [height, width]
 
 # 캘리브레이션된 카메라 파라미터로부터 각 카메라의 프로젝션 행렬 읽어오기
-P0 = get_projection_matrix(cam0)      # camera1의 프로젝션 행렬
+P0 = get_projection_matrix(cam0 - 1)      # camera1의 프로젝션 행렬
 P1 = get_projection_matrix(cam1 - 1)    # camera2의 프로젝션 행렬 (calib 파일 인덱스 1)
+
+# print(P0)
+# print(P1)
 
 def get_camera_center(P):
     """
@@ -132,6 +132,7 @@ def run_handpose_udp(cam_idx0, cam_idx1, P0, P1):
             else:
                 # utils.py의 DLT 함수를 이용하여 3D 좌표 복원
                 pt3d = DLT(P0, P1, uv0, uv1)
+                
                 # 이미지 중앙 기준 좌표 변환 (x: 오른쪽 양수, y: 위쪽 양수)
                 pt3d[0] -= (frame_shape[1] / 2)
                 pt3d[1] = (frame_shape[0] / 2) - pt3d[1]
@@ -151,39 +152,11 @@ def run_handpose_udp(cam_idx0, cam_idx1, P0, P1):
             flattened.extend([float(c) for c in cam1_center])
             # 5. 카메라 2 회전 행렬 (9개) -> 행 우선 순서(flatten)
             flattened.extend([float(r) for r in cam1_rotation.flatten()])
-            
-            
-            
-            
-            
-        aruco1 = detector.detect(frame0 ,"center")
-        aruco2 = detector.detect(frame1 ,"center")
-        frame0 = detector.draw(frame0)
-        frame1 = detector.draw(frame1)
-        
-        if (not aruco1 is None and not aruco2 is None and (len(aruco1) == len(aruco2))):
-            for uv0, uv1 in zip(aruco1, aruco2):
-                np.append(uv0, [0])
-                np.append(uv1, [0])
-                print(uv0, uv1)
-                if uv0[0] == -1 or uv1[0] == -1:
-                    points_3d.append([-1, -1, -1])
-                else:
-                    # utils.py의 DLT 함수를 이용하여 3D 좌표 복원
-                    pt3d = DLT(P0, P1, uv0, uv1)
-                    # 이미지 중앙 기준 좌표 변환 (x: 오른쪽 양수, y: 위쪽 양수)
-                    pt3d[0] -= (frame_shape[1] / 2)
-                    pt3d[1] = (frame_shape[0] / 2) - pt3d[1]
-                    # 센티미터 단위를 미터 단위로 변환
-                    pt3d = [coord * scale_factor for coord in pt3d]
-                    flattened.extend([float(coord) for point in pt3d for coord in point])
-                
-        
-        # 손 랜드마크, 그리고 카메라 정보가 정상적으로 계산되었을 때만 데이터 전송
-        if keypoints0[0][0] != -1 and keypoints1[0][0] != -1:
+
             # 전송할 데이터: 63 + 3 + 9 + 3 + 9 = 87 float 값
             send_str = str(flattened)
             sock.sendto(send_str.encode(), serverAddressPort)
+            # print(send_str)
         
         # 실시간 영상 출력
         cv.imshow("Camera 0", frame0)
