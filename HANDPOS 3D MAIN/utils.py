@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def _make_homogeneous_rep_matrix(R, t):
     P = np.zeros((4,4))
     P[:3,:3] = R

@@ -4,31 +4,22 @@ import numpy as np
 import socket
 import sys
 from utils import DLT, get_projection_matrix
-# utils.py는 calib.py에서 저장한 파라미터 파일들을 읽어서 사용합니다.
 
-# UDP 소켓 설정 (예: 로컬호스트 127.0.0.1, 포트 5052)
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 UDP_IP = "127.0.0.1"
 UDP_PORT = 5052
 serverAddressPort = (UDP_IP, UDP_PORT)
 
-# 카메라 인덱스 (칼리브레이션 시 camera0는 0번, camera1은 내부적으로 인덱스 1번 사용)
-cam0 = 1           # 카메라 1
-cam1 = 2           # 카메라 2 (calib 파일에서는 인덱스 1번으로 되어 있음)
+cam0 = 1
+cam1 = 2
 
-# Mediapipe 초기화
 mp_drawing = mp.solutions.drawing_utils
 mp_hands = mp.solutions.hands
 
-# 캘리브레이션 시 사용했던 해상도 (예: 640x480)
 frame_shape = [480, 640]  # [height, width]
 
-# 캘리브레이션된 카메라 파라미터로부터 각 카메라의 프로젝션 행렬 읽어오기
-P0 = get_projection_matrix(cam0 - 1)      # camera1의 프로젝션 행렬
-P1 = get_projection_matrix(cam1 - 1)    # camera2의 프로젝션 행렬 (calib 파일 인덱스 1)
-
-# print(P0)
-# print(P1)
+P0 = get_projection_matrix(cam0 - 1)
+P1 = get_projection_matrix(cam1 - 1)
 
 def get_camera_center(P):
     """
