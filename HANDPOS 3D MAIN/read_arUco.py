@@ -77,7 +77,6 @@ class Detecter:
         return frame
 if __name__=="__main__":
     import cv2
-    from datetime import datetime
 
     # 1. 클래스 인스턴스 생성
     d = Detecter()

@@ -4,11 +4,14 @@ import numpy as np
 import socket
 import sys
 from utils import DLT, get_projection_matrix
+from read_arUco import Detecter
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 UDP_IP = "127.0.0.1"
-UDP_PORT = 5052
-serverAddressPort = (UDP_IP, UDP_PORT)
+UDP_PORT_HANDS = 5052
+UDP_PORT_CAMERA = 5053
+serverAddressPortHands = (UDP_IP, UDP_PORT_HANDS)
+serverAddressPortCamera = (UDP_IP, UDP_PORT_CAMERA)
 
 cam0 = 1
 cam1 = 2
@@ -20,6 +23,8 @@ frame_shape = [480, 640]  # [height, width]
 
 P0 = get_projection_matrix(cam0 - 1)
 P1 = get_projection_matrix(cam1 - 1)
+
+arUco_detector = Detecter()
 
 def get_camera_center(P):
     """
@@ -41,16 +46,14 @@ def get_camera_rotation(P):
     return R
 
 def run_handpose_udp(cam_idx0, cam_idx1, P0, P1):
-    # 두 카메라 열기
     cap0 = cv.VideoCapture(cam_idx0, cv.CAP_DSHOW)
     cap1 = cv.VideoCapture(cam_idx1, cv.CAP_DSHOW)
-    # 해상도 설정 (칼리브레이션 시 사용한 해상도)
+    
     cap0.set(cv.CAP_PROP_FRAME_WIDTH, frame_shape[1])
     cap0.set(cv.CAP_PROP_FRAME_HEIGHT, frame_shape[0])
     cap1.set(cv.CAP_PROP_FRAME_WIDTH, frame_shape[1])
     cap1.set(cv.CAP_PROP_FRAME_HEIGHT, frame_shape[0])
     
-    # Mediapipe Hands 초기화 (한 프레임당 최대 1개의 손만 검출)
     hands0 = mp_hands.Hands(min_detection_confidence=0.5,
                             max_num_hands=1,
                             min_tracking_confidence=0.5)
@@ -58,21 +61,18 @@ def run_handpose_udp(cam_idx0, cam_idx1, P0, P1):
                             max_num_hands=1,
                             min_tracking_confidence=0.5)
 
-    # 센티미터 단위를 미터 단위로 변환하기 위한 스케일 팩터 (1 cm = 0.01 m) 1-> 10cm
     scale_factor = 0.1
 
-    # 두 카메라의 센터와 회전 행렬 계산
     cam0_center = get_camera_center(P0)
     cam1_center = get_camera_center(P1)
     cam0_rotation = get_camera_rotation(P0)
     cam1_rotation = get_camera_rotation(P1)
     
-    # 이미지 좌표계 기준 변환 (손 랜드마크와 동일한 방식 적용)
     cam0_center[0] -= (frame_shape[1] / 2)
     cam0_center[1] = (frame_shape[0] / 2) - cam0_center[1]
     cam1_center[0] -= (frame_shape[1] / 2)
     cam1_center[1] = (frame_shape[0] / 2) - cam1_center[1]
-    # 스케일 팩터 적용 (미터 단위 변환)
+    
     cam0_center = cam0_center * scale_factor
     cam1_center = cam1_center * scale_factor
 
@@ -83,15 +83,15 @@ def run_handpose_udp(cam_idx0, cam_idx1, P0, P1):
             print("Error: 카메라에서 프레임을 받아올 수 없습니다.")
             break
         
-        # BGR 이미지를 RGB로 변환 (Mediapipe는 RGB 이미지 사용)
+        print(arUco_detector.detect(frame0, "center"))
+        print(arUco_detector.detect(frame1, "center"))
+        
         rgb0 = cv.cvtColor(frame0, cv.COLOR_BGR2RGB)
         rgb1 = cv.cvtColor(frame1, cv.COLOR_BGR2RGB)
         
-        # 손 검출
         results0 = hands0.process(rgb0)
         results1 = hands1.process(rgb1)
         
-        # 각 카메라에서 21개 손 랜드마크 (픽셀 좌표) 추출
         keypoints0 = []
         keypoints1 = []
         
@@ -103,7 +103,7 @@ def run_handpose_udp(cam_idx0, cam_idx1, P0, P1):
                 keypoints0.append([x, y])
             mp_drawing.draw_landmarks(frame0, hand_landmarks, mp_hands.HAND_CONNECTIONS)
         else:
-            keypoints0 = [[-1, -1]] * 21  # 검출 실패 시
+            keypoints0 = [[-1, -1]] * 21
         
         if results1.multi_hand_landmarks:
             hand_landmarks = results1.multi_hand_landmarks[0]
@@ -115,39 +115,34 @@ def run_handpose_udp(cam_idx0, cam_idx1, P0, P1):
         else:
             keypoints1 = [[-1, -1]] * 21
         
-        # 두 카메라 모두에서 손이 검출되면 삼각측량 수행하여 3D 좌표 계산
         points_3d = []
         for uv0, uv1 in zip(keypoints0, keypoints1):
             if uv0[0] == -1 or uv1[0] == -1:
                 points_3d.append([-1, -1, -1])
             else:
-                # utils.py의 DLT 함수를 이용하여 3D 좌표 복원
                 pt3d = DLT(P0, P1, uv0, uv1)
                 
-                # 이미지 중앙 기준 좌표 변환 (x: 오른쪽 양수, y: 위쪽 양수)
                 pt3d[0] -= (frame_shape[1] / 2)
                 pt3d[1] = (frame_shape[0] / 2) - pt3d[1]
-                # 센티미터 단위를 미터 단위로 변환
+                
                 pt3d = [coord * scale_factor for coord in pt3d]
                 points_3d.append(pt3d)
         
-        # 손 랜드마크, 그리고 카메라 정보가 정상적으로 계산되었을 때만 데이터 전송
-        if keypoints0[0][0] != -1 and keypoints1[0][0] != -1:
-            # 1. 손 랜드마크 3D 좌표 (63개)
-            flattened = [float(coord) for point in points_3d for coord in point]
-            # 2. 카메라 1 센터 (3개)
-            flattened.extend([float(c) for c in cam0_center])
-            # 3. 카메라 1 회전 행렬 (9개) -> 행 우선 순서(flatten)
-            flattened.extend([float(r) for r in cam0_rotation.flatten()])
-            # 4. 카메라 2 센터 (3개)
-            flattened.extend([float(c) for c in cam1_center])
-            # 5. 카메라 2 회전 행렬 (9개) -> 행 우선 순서(flatten)
-            flattened.extend([float(r) for r in cam1_rotation.flatten()])
+        if True: # 카메라 UDP
+            flattened_camera = []
+            flattened_camera.extend([float(c) for c in cam0_center])
+            flattened_camera.extend([float(r) for r in cam0_rotation.flatten()])
+            flattened_camera.extend([float(c) for c in cam1_center])
+            flattened_camera.extend([float(r) for r in cam1_rotation.flatten()])
 
-            # 전송할 데이터: 63 + 3 + 9 + 3 + 9 = 87 float 값
-            send_str = str(flattened)
-            sock.sendto(send_str.encode(), serverAddressPort)
-            # print(send_str)
+            send_str_camera = str(flattened_camera)
+            sock.sendto(send_str_camera.encode(), serverAddressPortCamera)
+        
+        if keypoints0[0][0] != -1 and keypoints1[0][0] != -1:
+            flattened_hands = [float(coord) for point in points_3d for coord in point]
+
+            send_str_hands = str(flattened_hands)
+            sock.sendto(send_str_hands.encode(), serverAddressPortHands)
         
         # 실시간 영상 출력
         cv.imshow("Camera 0", frame0)
