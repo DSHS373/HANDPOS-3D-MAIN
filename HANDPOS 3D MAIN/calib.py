@@ -613,14 +613,13 @@ if __name__ == '__main__':
 
 
     """Optional. Define a different origin point and save the calibration data"""
-    # #get the world to camera0 rotation and translation
-    # R_W0, T_W0 = get_world_space_origin(cmtx0, dist0, os.path.join('frames_pair', 'camera0_4.png'))
-    # #get rotation and translation from world directly to camera1
-    # R_W1, T_W1 = get_cam1_to_world_transforms(cmtx0, dist0, R_W0, T_W0,
-    #                                           cmtx1, dist1, R1, T1,
-    #                                           os.path.join('frames_pair', 'camera0_4.png'),
-    #                                           os.path.join('frames_pair', 'camera1_4.png'),)
+    #get the world to camera0 rotation and translation
+    R_W0, T_W0 = get_world_space_origin(cmtx0, dist0, os.path.join('frames_pair', 'camera0_0.png'))
+    #get rotation and translation from world directly to camera1
+    R_W1, T_W1 = get_cam1_to_world_transforms(cmtx0, dist0, R_W0, T_W0,
+                                              cmtx1, dist1, R1, T1,
+                                              os.path.join('frames_pair', 'camera0_0.png'),
+                                              os.path.join('frames_pair', 'camera1_0.png'),)
 
-    # #save rotation and translation parameters to disk
-    # save_extrinsic_calibration_parameters(R_W0, T_W0, R_W1, T_W1, prefix = 'world_to_') #this will write R and T to disk
-
+    #save rotation and translation parameters to disk
+    save_extrinsic_calibration_parameters(R_W0, T_W0, R_W1, T_W1, prefix = 'world_to_') #this will write R and T to disk
