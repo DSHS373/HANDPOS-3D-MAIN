@@ -8,7 +8,7 @@ from ultralytics import YOLO
 from sort_tracker.sort import Sort
 import time
 
-FPS_ON = False
+VERBOSE = True
 
 # =========================
 # UDP 설정
@@ -95,10 +95,17 @@ def extract_box_detections(result, model, target_classes=None):
 matchdict = {}          # id1 -> id2
 bbox_cache2 = {}        # id2 -> last bbox
 ANGLE_THRESH = np.radians(5)   # polar 정렬 각도 버킷 크기
+last_len = 0
 
 def should_recompute(tr1, tr2):
+    global last_len
+    
+    if len(tr1) == len(tr2) == 0:
+        last_len = 0
+        return False
+    
     # 두 카메라 모두 트랙이 있고, 수가 너무 다르지 않을 때만 재매칭
-    return (len(tr1) > 0 and len(tr2) > 0 and abs(len(tr1) - len(tr2)) <= 1)
+    return (len(tr1) > 0 and len(tr2) > 0 and abs(len(tr1) - len(tr2)) == 0 and last_len != len(tr1))
 
 def _polar_key(o, angle_thresh=ANGLE_THRESH):
     """
@@ -125,7 +132,7 @@ def get_matchdict(frame1, frame2, model, tracker1, tracker2):
     """
     원래 코드 그대로: 여기서 YOLO + SORT + 매칭을 한 번에 처리.
     """
-    global matchdict, bbox_cache2
+    global matchdict, bbox_cache2, last_len
 
     # 탐지
     results = model.predict([frame1, frame2], conf=0.9, verbose=False)
@@ -146,6 +153,7 @@ def get_matchdict(frame1, frame2, model, tracker1, tracker2):
 
     # 조건 충족시에만 매칭 재계산 (각도+거리 정렬 기반)
     if should_recompute(tracked_objects1, tracked_objects2):
+        last_len = len(tracked_objects1)
         # 왼쪽 상단 (0,0) 기준 polar 정렬
         to1 = sorted(tracked_objects1, key=_polar_key)
         to2 = sorted(tracked_objects2, key=_polar_key)
@@ -307,6 +315,58 @@ def triangulate_yolo_centers_and_send(resultdict, P0, P1, scale_factor):
 
 ################################################
 
+##################### KNN ######################
+
+max_num_hands = 1
+gesture = {
+    0:"indicate"
+}
+
+file = np.genfromtxt('models/gesture_train_fy.csv', delimiter=',')
+angle = file[:,:-1].astype(np.float32)
+label = file[:, -1].astype(np.float32)
+knn = cv.ml.KNearest_create()
+knn.train(angle, cv.ml.ROW_SAMPLE, label)
+
+def isindicate(result, knn):
+    if result.multi_hand_landmarks is not None:
+        for res in result.multi_hand_landmarks:
+            joint = np.zeros((21, 3))
+            for j, lm in enumerate(res.landmark):
+                joint[j] = [lm.x, lm.y, lm.z]
+
+            # Compute angles between joints
+            v1 = joint[[0,1,2,3,0,5,6,7,0,9,10,11,0,13,14,15,0,17,18,19],:] # Parent joint
+            v2 = joint[[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20],:] # Child joint
+            v = v2 - v1 # [20,3]
+            # Normalize v
+            v = v / np.linalg.norm(v, axis=1)[:, np.newaxis]
+
+            # Get angle using arcos of dot product
+            angle = np.arccos(np.einsum('nt,nt->n',
+                v[[0,1,2,4,5,6,8,9,10,12,13,14,16,17,18],:], 
+                v[[1,2,3,5,6,7,9,10,11,13,14,15,17,18,19],:])) # [15,]
+
+            angle = np.degrees(angle) # Convert radian to degree
+
+            # Inference gesture
+            data = np.array([angle], dtype=np.float32)
+            ret, results, neighbours, dist = knn.findNearest(data, 3)
+            idx = int(results[0][0])
+            threshold = 2500  # 거리 기준 (값이 작을수록 유사도가 높음)
+            # Draw gesture result
+            """if idx in rps_gesture.keys():
+                cv2.putText(img, text=rps_gesture[idx].upper(), org=(int(res.landmark[0].x * img.shape[1]), int(res.landmark[0].y * img.shape[0] + 20)), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=(255, 255, 255), thickness=2)
+"""
+            # Other gestures
+            if dist[0][0] < threshold:
+                if idx in gesture:
+                    if gesture[idx]=="indicate":
+                        return True
+    return False
+
+################################################
+
 def angle_ABC(A, B, C):
     A = np.array(A)
     B = np.array(B)
@@ -387,12 +447,12 @@ def main(cam_idx0, cam_idx1, P0, P1):
 
     frame_idx = 0
     
-    if FPS_ON:
+    if VERBOSE:
         prev_time = time.time()
         
         fpss = 0
         fpss_cnt = 0
-    
+        
     while True:
         ret0, frame0 = cap0.read()
         ret1, frame1 = cap1.read()
@@ -427,10 +487,12 @@ def main(cam_idx0, cam_idx1, P0, P1):
 
         if do_hands:
             draw_hands = True
-                
+            
             rgb0 = cv.cvtColor(frame0, cv.COLOR_BGR2RGB)
             rgb1 = cv.cvtColor(frame1, cv.COLOR_BGR2RGB)
             results0 = hands0.process(rgb0)
+            is_indicating = isindicate(results0, knn)
+            
             results1 = hands1.process(rgb1)
 
             keypoints0 = []
@@ -477,18 +539,22 @@ def main(cam_idx0, cam_idx1, P0, P1):
         # =========================
         # 각도 계산 & 선택된 박스 찾아서 시각화
         # =========================
+        
         angles = []
         selected = [(float("inf"), -1)]
+        
+        if is_indicating:
+            if len(points_3d_unity) > 8 and len(box_poses) > 0:
+                pos5 = points_3d_unity[5]
+                pos7 = points_3d_unity[7]
 
-        if len(points_3d_unity) > 8 and len(box_poses) > 0:
-            pos5 = points_3d_unity[5]
-            pos7 = points_3d_unity[7]
-
-            for obj_id, pos in enumerate(box_poses):
-                angle = angle_ABC(pos, pos5, pos7)
-                angles.append((obj_id, angle))
-                if angle < ANGLE_THES:
-                    selected.append((angle, obj_id))
+                for obj_id, pos in enumerate(box_poses):
+                    angle = angle_ABC(pos, pos5, pos7)
+                    angles.append((obj_id, angle))
+                    
+                    
+                    if angle < ANGLE_THES:
+                        selected.append((angle, obj_id))
 
         # 선택된 박스 ID (없으면 -1)
         selected_id = min(selected)[1]
@@ -505,7 +571,7 @@ def main(cam_idx0, cam_idx1, P0, P1):
             flattened_hands = [float(coord) for point in points_3d_unity for coord in point]
             sock.sendto(json.dumps({"points3d": flattened_hands}).encode('utf-8'), serverAddressPortHands)
         
-        if FPS_ON:
+        if VERBOSE:
             # FPS 계산
             curr_time = time.time()
             dt = curr_time - prev_time
@@ -517,6 +583,10 @@ def main(cam_idx0, cam_idx1, P0, P1):
 
             # 화면에 표시 (원하면)
             cv.putText(frame0, f"FPS: {fpss/fpss_cnt:.1f}", (10, 30),
+                    cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+
+            # 화면에 표시 (원하면)
+            cv.putText(frame0, f"Indicating: {is_indicating}", (10, 60),
                     cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
 
         # 미리보기
