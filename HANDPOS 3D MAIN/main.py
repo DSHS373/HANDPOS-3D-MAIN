@@ -8,6 +8,8 @@ from ultralytics import YOLO
 from sort_tracker.sort import Sort
 import time
 
+FPS_ON = False
+
 # =========================
 # UDP 설정
 # =========================
@@ -385,10 +387,11 @@ def main(cam_idx0, cam_idx1, P0, P1):
 
     frame_idx = 0
     
-    prev_time = time.time()
-    
-    fpss = 0
-    fpss_cnt = 0
+    if FPS_ON:
+        prev_time = time.time()
+        
+        fpss = 0
+        fpss_cnt = 0
     
     while True:
         ret0, frame0 = cap0.read()
@@ -479,10 +482,10 @@ def main(cam_idx0, cam_idx1, P0, P1):
 
         if len(points_3d_unity) > 8 and len(box_poses) > 0:
             pos5 = points_3d_unity[5]
-            pos8 = points_3d_unity[8]
+            pos7 = points_3d_unity[7]
 
             for obj_id, pos in enumerate(box_poses):
-                angle = angle_ABC(pos, pos5, pos8)
+                angle = angle_ABC(pos, pos5, pos7)
                 angles.append((obj_id, angle))
                 if angle < ANGLE_THES:
                     selected.append((angle, obj_id))
@@ -502,18 +505,19 @@ def main(cam_idx0, cam_idx1, P0, P1):
             flattened_hands = [float(coord) for point in points_3d_unity for coord in point]
             sock.sendto(json.dumps({"points3d": flattened_hands}).encode('utf-8'), serverAddressPortHands)
         
-        # FPS 계산
-        curr_time = time.time()
-        dt = curr_time - prev_time
-        prev_time = curr_time
-        
-        if 1.0 / dt < 100:
-            fpss += 1.0 / dt
-            fpss_cnt += 1
+        if FPS_ON:
+            # FPS 계산
+            curr_time = time.time()
+            dt = curr_time - prev_time
+            prev_time = curr_time
+            
+            if 1.0 / dt < 100:
+                fpss += 1.0 / dt
+                fpss_cnt += 1
 
-        # 화면에 표시 (원하면)
-        cv.putText(frame0, f"FPS: {fpss/fpss_cnt:.1f}", (10, 30),
-                cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+            # 화면에 표시 (원하면)
+            cv.putText(frame0, f"FPS: {fpss/fpss_cnt:.1f}", (10, 30),
+                    cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
 
         # 미리보기
         cv.imshow("Camera 0", frame0)
