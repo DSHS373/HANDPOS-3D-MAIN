@@ -6,6 +6,7 @@ import json
 from utils import DLT, get_projection_matrix_with_shift
 from ultralytics import YOLO
 from sort_tracker.sort import Sort
+import time
 
 # =========================
 # UDP 설정
@@ -383,7 +384,12 @@ def main(cam_idx0, cam_idx1, P0, P1):
     sock.sendto(json.dumps(camera_packet).encode('utf-8'), serverAddressPortCamera)
 
     frame_idx = 0
-        
+    
+    prev_time = time.time()
+    
+    fpss = 0
+    fpss_cnt = 0
+    
     while True:
         ret0, frame0 = cap0.read()
         ret1, frame1 = cap1.read()
@@ -417,6 +423,8 @@ def main(cam_idx0, cam_idx1, P0, P1):
         send_hands_udp = False
 
         if do_hands:
+            draw_hands = True
+                
             rgb0 = cv.cvtColor(frame0, cv.COLOR_BGR2RGB)
             rgb1 = cv.cvtColor(frame1, cv.COLOR_BGR2RGB)
             results0 = hands0.process(rgb0)
@@ -431,8 +439,6 @@ def main(cam_idx0, cam_idx1, P0, P1):
                     x = int(round(lm.x * W))
                     y = int(round(lm.y * H))
                     keypoints0.append([x, y])
-                # 카메라 미리보기에서는 이 프레임에만 랜드마크 그려짐
-                draw_hands = True
             else:
                 keypoints0 = [[-1, -1]] * 21
                 draw_hands = False
@@ -443,7 +449,6 @@ def main(cam_idx0, cam_idx1, P0, P1):
                     x = int(round(lm.x * W))
                     y = int(round(lm.y * H))
                     keypoints1.append([x, y])
-                draw_hands = True
             else:
                 keypoints1 = [[-1, -1]] * 21
                 draw_hands = False
@@ -496,6 +501,19 @@ def main(cam_idx0, cam_idx1, P0, P1):
         if send_hands_udp and keypoints0[0][0] != -1 and keypoints1[0][0] != -1:
             flattened_hands = [float(coord) for point in points_3d_unity for coord in point]
             sock.sendto(json.dumps({"points3d": flattened_hands}).encode('utf-8'), serverAddressPortHands)
+        
+        # FPS 계산
+        curr_time = time.time()
+        dt = curr_time - prev_time
+        prev_time = curr_time
+        
+        if 1.0 / dt < 100:
+            fpss += 1.0 / dt
+            fpss_cnt += 1
+
+        # 화면에 표시 (원하면)
+        cv.putText(frame0, f"FPS: {fpss/fpss_cnt:.1f}", (10, 30),
+                cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
 
         # 미리보기
         cv.imshow("Camera 0", frame0)
